@@ -1,0 +1,46 @@
+import pytest
+import pandas as pd
+import numpy as np
+from modeling.feature_engineering import ChurnFeatureEngineer
+from sklearn.exceptions import NotFittedError
+
+@pytest.fixture
+def sample_features():
+    return pd.DataFrame({
+        'recency': [10, 20, 30, 40],
+        'frequency': [5, 3, 8, 2],
+        'avg_order_value': [50.0, 75.0, 60.0, 40.0],
+        'monetary_value': [250.0, 225.0, 480.0, 80.0],
+        'unique_categories': [3, 2, 4, 1],
+        'high_margin_ratio': [0.2, 0.5, 0.3, 0.1]
+    })
+
+def test_feature_pipeline_initialization():
+    engineer = ChurnFeatureEngineer()
+    assert engineer.feature_pipeline is not None
+    assert 'num' in engineer.feature_pipeline.named_transformers_
+    assert 'cat' in engineer.feature_pipeline.named_transformers_
+
+def test_feature_transformation(sample_features):
+    engineer = ChurnFeatureEngineer()
+    transformed = engineer.fit_transform_features(sample_features)
+    
+    assert transformed.shape[0] == sample_features.shape[0]
+    assert not transformed.isnull().any().any()
+    assert all('num__' in col or 'cat__' in col for col in transformed.columns)
+
+def test_unfitted_pipeline_raises_error(sample_features):
+    engineer = ChurnFeatureEngineer()
+    engineer.feature_pipeline = None  # Simulate unfitted state
+    
+    with pytest.raises(NotFittedError):
+        engineer.fit_transform_features(sample_features)
+
+@patch('modeling.feature_engineering.pickle.dump')
+@patch('pathlib.Path.mkdir')
+def test_pipeline_saving(mock_mkdir, mock_dump):
+    engineer = ChurnFeatureEngineer()
+    engineer.save_pipeline("test_path.pkl")
+    
+    mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+    mock_dump.assert_called_once()

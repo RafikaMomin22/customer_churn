@@ -1,0 +1,66 @@
+import pytest
+import numpy as np
+import pandas as pd
+from unittest.mock import patch, MagicMock
+from modeling.train import ChurnModelTrainer
+from modeling.predict import ChurnPredictor
+from sklearn.ensemble import RandomForestClassifier
+
+@pytest.fixture
+def sample_train_data():
+    X = pd.DataFrame(np.random.rand(100, 10), 
+                    columns=[f'feature_{i}' for i in range(10)])
+    y = pd.Series(np.random.randint(0, 2, 100))
+    return X, y
+
+@patch('mlflow.start_run')
+@patch('sklearn.model_selection.GridSearchCV')
+def test_model_training(mock_grid_search, mock_mlflow, sample_train_data):
+    X, y = sample_train_data
+    
+    # Mock GridSearchCV
+    mock_model = MagicMock()
+    mock_model.best_estimator_ = RandomForestClassifier()
+    mock_model.best_params_ = {'n_estimators': 100}
+    mock_grid_search.return_value = mock_model
+    
+    trainer = ChurnModelTrainer()
+    trainer.train_model(X, y)
+    
+    assert isinstance(trainer.model, RandomForestClassifier)
+    assert trainer.best_params is not None
+    assert 'roc_auc' in trainer.metrics
+    mock_mlflow.assert_called_once()
+
+def test_model_saving(tmp_path):
+    trainer = ChurnModelTrainer()
+    trainer.model = RandomForestClassifier()
+    
+    model_path = tmp_path / "test_model.pkl"
+    trainer.save_model(model_path)
+    
+    assert model_path.exists()
+
+@patch('modeling.predict.pickle.load')
+def test_prediction_flow(mock_pickle_load, sample_train_data):
+    X, _ = sample_train_data
+    
+    # Mock model and pipeline
+    mock_model = MagicMock()
+    mock_model.predict_proba.return_value = np.array([[0.7, 0.3] for _ in range(len(X))])
+    mock_model.predict.return_value = np.array([0 for _ in range(len(X))])
+    
+    mock_pipeline = MagicMock()
+    mock_pipeline.transform.return_value = X.values
+    
+    mock_pickle_load.side_effect = [mock_model, mock_pipeline]
+    
+    predictor = ChurnPredictor()
+    predictor.load_artifacts("dummy_model.pkl", "dummy_pipeline.pkl")
+    
+    probs, preds = predictor.predict_churn(X)
+    
+    assert len(probs) == len(X)
+    assert len(preds) == len(X)
+    assert all(0 <= p <= 1 for p in probs)
+    assert set(preds.unique()).issubset({0, 1})

@@ -2,6 +2,8 @@
 
 # Overview
 
+Note: This is a SIMPLIFIED VERSION in regards to proprietary projects.
+
 This project implements a machine learning solution to predict customer churn probability using Random Forest classification. The system analyzes customer transaction behavior to identify at-risk customers, enabling targeted retention strategies that resulted in a more focused and efficient loyalty program in production.
 
 Key Business Impact:

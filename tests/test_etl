@@ -1,0 +1,52 @@
+import pytest
+from unittest.mock import patch, MagicMock
+import pandas as pd
+from etl.extract import ChurnDataExtractor
+from datetime import datetime, timedelta
+
+@pytest.fixture
+def mock_db_data():
+    return pd.DataFrame({
+        'customer_id': [1, 2, 3],
+        'recency': [10, 20, 30],
+        'frequency': [5, 3, 8],
+        'avg_order_value': [50.0, 75.0, 60.0],
+        'monetary_value': [250.0, 225.0, 480.0],
+        'unique_categories': [3, 2, 4],
+        'high_margin_ratio': [0.2, 0.5, 0.3],
+        'churned': [0, 1, 0]
+    })
+
+def test_churn_window_calculation():
+    with patch('etl.extract.datetime') as mock_datetime:
+        mock_datetime.now.return_value = datetime(2023, 1, 31)
+        mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
+        
+        extractor = ChurnDataExtractor()
+        obs_start, churn_end = extractor._get_churn_window()
+        
+        assert obs_start == datetime(2022, 11, 2)  # 90 days before Jan 31
+        assert churn_end == datetime(2023, 2, 28)  # 28 days after Jan 31
+
+@patch('etl.extract.pd.read_sql')
+@patch('etl.extract.create_engine')
+def test_data_extraction(mock_engine, mock_read_sql, mock_db_data):
+    # Setup mock database connection
+    mock_conn = MagicMock()
+    mock_engine.return_value = mock_conn
+    mock_read_sql.return_value = mock_db_data
+    
+    extractor = ChurnDataExtractor()
+    result = extractor.extract_customer_data()
+    
+    assert not result.empty
+    assert 'churned' in result.columns
+    assert len(result) == 3
+    mock_read_sql.assert_called_once()
+
+@patch('etl.extract.pd.read_sql', side_effect=Exception("DB error"))
+def test_extraction_error_handling(mock_read_sql):
+    extractor = ChurnDataExtractor()
+    result = extractor.extract_customer_data()
+    
+    assert result is None
